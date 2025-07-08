@@ -80,12 +80,10 @@ class RedditScraper:
 
         return None
 
-
-
     def get_post_content(self, post_link):
-        print('Starting to scrape post:', post_link)
+        print("Starting to scrape post:", post_link)
         scrape_start_time = time.time()
-        print('Getting to page...')
+        print("Getting to page...")
         self.driver.get(post_link)
         time.sleep(5)
 
