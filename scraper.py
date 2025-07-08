@@ -62,10 +62,23 @@ class RedditScraper:
             scrolls += 1
             print(f"Scroll {scrolls}, collected {len(post_links)} links")
 
+        print(f'Scraped a total of {len(post_links)} post links.')
         return list(post_links)
 
 
+    def url2thread_name(self,url):
+        #https://www.reddit.com/r/AmItheAsshole/comments/1lu69qb/aita_for_pulling_my_daughter_from_soccer_camp_and/
+        #extract the AmItheAsshole part
+        try:
+            thread_name = url.split('https://www.reddit.com/r/')[1].split('/')[0]
+            return thread_name
+        except:
+            pass
+
+        return None
+
     def get_post_content(self, post_link):
+        start_time = time.time()
         self.driver.get(post_link)
         time.sleep(5)
         try:
@@ -73,10 +86,9 @@ class RedditScraper:
                 By.XPATH, "//button[contains(., 'Read more')]"
             )
             read_more_button.click()
-            print("Clicked 'Read more' button.")
             time.sleep(1)  # Let the content expand
         except:
-            print("'Read more' button not found or not needed.")
+            pass
 
         # repeatedly scrape content until we get all necessary data
         timeout = 10  # s
@@ -113,8 +125,9 @@ class RedditScraper:
             username=username,
             profile_img=profile_img.get_attribute("src") if profile_img else None,
             content=content,
-            thread_name=self.driver.title,
+            thread_name=self.url2thread_name(post_link),
         )
+        print(f'Scraped {post_link} in {time.time() - start_time:.2f}s!')
         return post
 
 
@@ -157,15 +170,16 @@ def scrape_thread(thread_url,posts_to_scrape:int):
     scraper = RedditScraper()
     data_saver = DataSaver()
 
-    post_links = scraper.get_posts(thread_url)
-    print(f"Found {len(post_links)} posts in the thread.")
+    #cut this scrape to size beacause we cant contol pagination
+    post_links = scraper.get_posts(thread_url,max_posts=posts_to_scrape)[:posts_to_scrape]
 
     for post_link in post_links:
         if posts_scraped >= posts_to_scrape:
             break
         post = scraper.get_post_content(post_link)
         data_saver.save_post_data(post)
-        print(f"Scraped post by {post.username} from thread: {post.thread_name}")
         posts_scraped += 1
 
-scrape_thread('https://www.reddit.com/r/AmItheAsshole/',100)
+
+if __name__ == "__main__":
+    scrape_thread('https://www.reddit.com/r/AmItheAsshole/',100)
