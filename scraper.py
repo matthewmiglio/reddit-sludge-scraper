@@ -8,14 +8,14 @@ import json
 import os
 import random
 
-
 class Post:
-    def __init__(self, username, profile_img, content, thread_name, title):
+    def __init__(self, username, profile_img, content, thread_name, title,url):
         self.username = username
         self.profile_img = profile_img
         self.content = content
         self.thread_name = thread_name
         self.title = title
+        self.url = url
 
     def to_dict(self):
         return {
@@ -24,6 +24,7 @@ class Post:
             "content": self.content,
             "thread_name": self.thread_name,
             "title": self.title,
+            "url": self.url
         }
 
 
@@ -34,8 +35,9 @@ class RedditScraper:
         self.driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()), options=chrome_options
         )
+        self.saver = DataSaver()
 
-    def get_posts(self, thread_link, max_posts=50, scroll_pause=2, max_scrolls=20):
+    def get_posts(self, thread_link, max_posts=50, scroll_pause=0.2, max_scrolls=200):
         self.driver.get(thread_link)
         time.sleep(5)
 
@@ -56,6 +58,9 @@ class RedditScraper:
             for post in posts:
                 href = post.get_attribute("href")
                 if href and "/comments/" in href:
+                    if self.saver.data_exists(href):
+                        print(f"Post {href} already exists, skipping...")
+                        continue
                     post_links.add(href)
 
             # Check if the scroll did anything
@@ -141,6 +146,7 @@ class RedditScraper:
             content=content,
             thread_name=self.url2thread_name(post_link),
             title=title,
+            url=post_link,
         )
         print(f"Scraped {post_link} in {time.time() - scrape_start_time:.2f}s!")
         return post
@@ -151,6 +157,18 @@ class DataSaver:
         self.data_folder_path = "reddit_data"
         if not os.path.exists(self.data_folder_path):
             os.makedirs(self.data_folder_path)
+        self.file_count = None
+
+    def data_exists(self,post_url):
+        files = os.listdir(self.data_folder_path)
+        self.file_count = len(files)
+        for f in files:
+            if '.json' in f:
+                with open(os.path.join(self.data_folder_path, f), "r") as file:
+                    data = json.load(file)
+                    if data.get("url") == post_url:
+                        return True
+        return False
 
     def save_post_data(self, post: Post):
         data = post.to_dict()
@@ -162,6 +180,7 @@ class DataSaver:
         file_path = os.path.join(self.data_folder_path, file_name)
         with open(file_path, "w") as f:
             json.dump(data, f, indent=4)
+        print(f'Saved this post data. There are now ~{self.file_count} posts saved!')
 
     def get_all_posts(self):
         posts = []
@@ -200,4 +219,18 @@ def scrape_thread(thread_url, posts_to_scrape: int):
 
 
 if __name__ == "__main__":
-    scrape_thread("https://www.reddit.com/r/AmItheAsshole/", 500)
+    threads_to_scrape = [
+        'https://www.reddit.com/r/tifu/',
+        'https://www.reddit.com/r/AmItheAsshole/',
+        'https://www.reddit.com/r/pettyrevenge/',
+        'https://www.reddit.com/r/ProRevenge/',
+        'https://www.reddit.com/r/raisedbynarcissists/',
+    ]
+
+    import threading
+    for thread in threads_to_scrape:
+        try:
+            t = threading.Thread(target=scrape_thread, args=(thread, 500))
+            t.start()
+        except:
+            pass
