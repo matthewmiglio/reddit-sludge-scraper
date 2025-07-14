@@ -195,6 +195,7 @@ class DataSaver:
                         data["content"],
                         data["thread_name"],
                         data["title"],
+                        data['url']
                     )
                     posts.append(post)
         return posts
