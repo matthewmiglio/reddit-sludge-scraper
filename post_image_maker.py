@@ -1,9 +1,10 @@
 from PIL import Image, ImageDraw, ImageFont
-from IPython.display import display
 import requests
 from io import BytesIO
-import matplotlib.pyplot as plt
 import random
+import os
+from scraper import DataSaver
+import cv2
 
 # --- Constants ---
 IMG_WIDTH, IMG_HEIGHT = 360, 640
@@ -19,18 +20,95 @@ font_body = ImageFont.truetype(FONT_BODY, size=14)
 font_search = ImageFont.truetype(FONT_SEARCH, size=12)
 
 
-def make_reddit_post_image(thread, title_text, body_text, profile_img_url, subreddit_icon_url, username):
-    if len(body_text)>900:
-        print('[!] Error: your body text is too long itll be cut off')
-        return None
-    if len(thread) > 17:
-        print('[!] Error: your thread name is too long itll be cut off')
-        return None
-    if len(username) > 27:
-        print('[!] Error: your username is too long itll be cut off')
+def crop_image(image_path, left, top, right, bottom, save=False):
+    image = cv2.imread(image_path)
+    cropped_image = image[top:bottom, left:right]
+    if save:
+        cv2.imwrite(image_path, cropped_image)
+    return cropped_image
+
+
+def pixel_is_white(pixel):
+    if len(pixel) != 3:
+        return False
+    if pixel[0] > 240 and pixel[1] > 240 and pixel[2] > 240:
+        return True
+    return False
+
+
+def crop_whitespace_out_of_image(image_path,save=False):
+    # read image, read size
+    image = cv2.imread(image_path)
+    dims = image.shape
+    y_max, x_max = dims[0], dims[1]
+
+    # loop row by row starting from bottom,
+    # looking for first non-white row
+    first_non_white_row_from_bottom = None
+    for y in range(y_max - 1, -1, -1):
+        this_row_pixels = []
+        for x in range(0, x_max):
+            pixel = image[y, x]
+            this_row_pixels.append(pixel)
+        if not all(pixel_is_white(pixel) for pixel in this_row_pixels):
+            first_non_white_row_from_bottom = y
+            break
+
+    # if didnt find ANY non-white rows, return error
+    if first_non_white_row_from_bottom is None:
+        print("[!] Warning: This image is entirely white!")
+        return False
+
+
+    pad = 30
+
+    cropped_image = crop_image(
+        image_path, 0, 0, x_max, first_non_white_row_from_bottom + pad, save=save
+    )
+
+    return cropped_image
+
+
+def resize_image_keep_aspect_ratio(image, target_width):
+    width, height = image.size
+    aspect_ratio = height / width
+    target_height = int(target_width * aspect_ratio)
+    resized_image = image.resize((target_width, target_height), Image.LANCZOS)
+    return resized_image
+    
+
+def make_reddit_post_image(
+    thread, title_text, body_text, profile_img_url, subreddit_icon_url, username,expected_width,save=True,
+):
+    if None in [
+        thread,
+        title_text,
+        body_text,
+        profile_img_url,
+        subreddit_icon_url,
+        username,
+    ]:
         return None
 
-    post_age= f'{random.randint(1,19)}h'
+    BODY_TEXT_MAX_LENGTH = 900
+    BODY_TEXT_MIN_LENGTH = 300
+    THREAD_NAME_MAX_LENGTH = 17
+    USERNAME_MAX_LENGTH = 27
+
+    if len(body_text) > BODY_TEXT_MAX_LENGTH:
+        # print("[!] Error: your body text is too long itll be cut off")
+        return None
+    if len(body_text) < BODY_TEXT_MIN_LENGTH:
+        # print("[!] Error: your body text is too short itll be cut off")
+        return None
+    if len(thread) > THREAD_NAME_MAX_LENGTH:
+        # print("[!] Error: your thread name is too long itll be cut off")
+        return None
+    if len(username) > USERNAME_MAX_LENGTH:
+        # print("[!] Error: your username is too long itll be cut off")
+        return None
+
+    post_age = f"{random.randint(1,19)}h"
     base_image_path = "reddit_assets/images/base_post_image.png"
     img = Image.open(base_image_path).convert("RGB")
     draw = ImageDraw.Draw(img)
@@ -41,12 +119,16 @@ def make_reddit_post_image(thread, title_text, body_text, profile_img_url, subre
     # Draw subreddit icon
     try:
         response = requests.get(subreddit_icon_url)
-        subreddit_icon = Image.open(BytesIO(response.content)).convert("RGBA").resize((20, 20))
+        subreddit_icon = (
+            Image.open(BytesIO(response.content)).convert("RGBA").resize((20, 20))
+        )
         mask_icon = Image.new("L", (20, 20), 0)
         ImageDraw.Draw(mask_icon).ellipse((0, 0, 20, 20), fill=255)
         img.paste(subreddit_icon, (85, 25), mask_icon)
     except Exception as e:
-        print("[!] Error: Failed to load subreddit icon:", e)
+        # print("[!] Non fetal error: Failed to load subreddit icon:", e)
+        # return None
+        pass
 
     # Draw profile avatar
     try:
@@ -56,14 +138,17 @@ def make_reddit_post_image(thread, title_text, body_text, profile_img_url, subre
         ImageDraw.Draw(mask).ellipse((0, 0, 32, 32), fill=255)
         img.paste(avatar, (MARGIN, 60), mask)
     except Exception as e:
-        print("[!] Error: Failed to load profile image:", e)
+        # print("[!] Error: Failed to load profile image:", e)
+        return None
 
     # Draw username and timestamp
-    draw.text((MARGIN + 40, 60), f"{username} · {post_age} ago", font=font_body, fill="gray")
+    draw.text(
+        (MARGIN + 40, 60), f"{username} · {post_age} ago", font=font_body, fill="gray"
+    )
 
     # Text wrapping function
     def draw_wrapped_text(draw, text, font, x, y, max_width):
-        paragraphs = text.split('\n')  # handles \n and \n\n naturally
+        paragraphs = text.split("\n")  # handles \n and \n\n naturally
         for para in paragraphs:
             if para.strip() == "":
                 # Add paragraph spacing
@@ -89,54 +174,83 @@ def make_reddit_post_image(thread, title_text, body_text, profile_img_url, subre
 
     # Draw title and body
     content_y_start = 60 + 32 + 10
-    y = draw_wrapped_text(draw, title_text, font_title, MARGIN, content_y_start, IMG_WIDTH - 2 * MARGIN)
+    y = draw_wrapped_text(
+        draw, title_text, font_title, MARGIN, content_y_start, IMG_WIDTH - 2 * MARGIN
+    )
     y += 8
     y = draw_wrapped_text(draw, body_text, font_body, MARGIN, y, IMG_WIDTH - 2 * MARGIN)
 
+    #resize to match expected width
+    img = resize_image_keep_aspect_ratio(img, expected_width)
+
+    if save:
+        image_saver = ImageSaver()
+        image_path = image_saver.save_image(
+            img,
+            thread,
+        )
+        crop_whitespace_out_of_image(image_path, save=True)
+        return image_path
+        
+    
     return img
 
 
-import os
+
 
 class ImageSaver:
-    def __init__(self, save_path='reddit_post_images'):
+    def __init__(self, save_path="reddit_post_images"):
         self.save_path = save_path
         if not os.path.exists(save_path):
             os.makedirs(save_path)
 
-    def save_image(self, img, thread_name, ):
-        uuid = str(random.randint(10000,99999))[:8]  # Generate a short unique identifier
-        file_name = f'{uuid}.png'
-        subfolder = thread_name.replace(' ', '_').replace('/', '_')
+    def save_image(
+        self,
+        img,
+        thread_name,
+    ):
+        uuid = str(random.randint(10000, 99999))[
+            :8
+        ]  # Generate a short unique identifier
+        file_name = f"{uuid}.png"
+        subfolder = thread_name.replace(" ", "_").replace("/", "_")
         subfolder_path = os.path.join(self.save_path, subfolder)
         if not os.path.exists(subfolder_path):
             os.makedirs(subfolder_path)
-        image_path = os.path.join(self.save_path, subfolder,file_name)
+        image_path = os.path.join(self.save_path, subfolder, file_name)
 
         img.save(image_path)
         print(f"Image saved as {image_path}")
+        return image_path
 
     def get_all_images(self):
         import os
-        return [f for f in os.listdir(self.save_path) if f.endswith('.png')]
 
-from scraper import DataSaver
-
+        return [f for f in os.listdir(self.save_path) if f.endswith(".png")]
 
 
-if __name__ == '__main__':
+def create_all_reddit_posts():
     ds = DataSaver()
     image_saver = ImageSaver()
     posts = ds.get_all_posts()
     for post in posts:
         post = post.to_dict()
-        thread = post['thread_name']
-        title_text = post['title']
-        body_text = post['content']
-        profile_img_url = post['profile_img']
-        subreddit_icon_url = 'https://www.redditinc.com/assets/images/site/reddit-logo.png'
-        username = post['username']
-        image = make_reddit_post_image(thread, title_text, body_text, profile_img_url, subreddit_icon_url, username)
+        thread = post["thread_name"]
+        title_text = post["title"]
+        body_text = post["content"]
+        profile_img_url = post["profile_img"]
+        subreddit_icon_url = (
+            "https://www.redditinc.com/assets/images/site/reddit-logo.png"
+        )
+        username = post["username"]
+        image = make_reddit_post_image(
+            thread, title_text, body_text, profile_img_url, subreddit_icon_url, username
+        )
         if image is not None:
-            image_saver.save_image(image, thread)
+            image_path = image_saver.save_image(image, thread)
+            crop_whitespace_out_of_image(image_path,save=True)
 
+
+
+if __name__ == "__main__":
+    create_all_reddit_posts()
