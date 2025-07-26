@@ -1,3 +1,4 @@
+import threading
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -8,8 +9,9 @@ import json
 import os
 import random
 
+
 class Post:
-    def __init__(self, username, profile_img, content, thread_name, title,url):
+    def __init__(self, username, profile_img, content, thread_name, title, url):
         self.username = username
         self.profile_img = profile_img
         self.content = content
@@ -24,14 +26,14 @@ class Post:
             "content": self.content,
             "thread_name": self.thread_name,
             "title": self.title,
-            "url": self.url
+            "url": self.url,
         }
 
 
 class RedditScraper:
     def __init__(self):
         chrome_options = Options()
-        chrome_options.add_argument("--start-maximized")
+        chrome_options.add_argument("--start-maximized ")
         self.driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()), options=chrome_options
         )
@@ -59,7 +61,7 @@ class RedditScraper:
                 href = post.get_attribute("href")
                 if href and "/comments/" in href:
                     if self.saver.data_exists(href):
-                        print(f"Post {href} already exists, skipping...")
+                        # print(f"Post {href} already exists, skipping...")
                         continue
                     post_links.add(href)
 
@@ -159,11 +161,11 @@ class DataSaver:
             os.makedirs(self.data_folder_path)
         self.file_count = None
 
-    def data_exists(self,post_url):
+    def data_exists(self, post_url):
         files = os.listdir(self.data_folder_path)
         self.file_count = len(files)
         for f in files:
-            if '.json' in f:
+            if ".json" in f:
                 with open(os.path.join(self.data_folder_path, f), "r") as file:
                     data = json.load(file)
                     if data.get("url") == post_url:
@@ -171,6 +173,12 @@ class DataSaver:
         return False
 
     def save_post_data(self, post: Post):
+        # check if already exists
+        url = post.url
+        if self.data_exists(url):
+            # print(f"Post {url} already exists, skipping save.")
+            return
+
         data = post.to_dict()
         # make a uuid for this file name
         file_name = (
@@ -180,7 +188,7 @@ class DataSaver:
         file_path = os.path.join(self.data_folder_path, file_name)
         with open(file_path, "w") as f:
             json.dump(data, f, indent=4)
-        print(f'Saved this post data. There are now ~{self.file_count} posts saved!')
+        print(f"Saved this post data. There are now ~{self.file_count} posts saved!")
 
     def get_all_posts(self):
         posts = []
@@ -195,43 +203,63 @@ class DataSaver:
                         data["content"],
                         data["thread_name"],
                         data["title"],
-                        data['url']
+                        data["url"],
                     )
                     posts.append(post)
         return posts
 
 
-def scrape_thread(thread_url, posts_to_scrape: int):
+def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
     posts_scraped = 0
     scraper = RedditScraper()
     data_saver = DataSaver()
 
-    # cut this scrape to size beacause we cant contol pagination
-    post_links = scraper.get_posts(thread_url, max_posts=posts_to_scrape)[
-        :posts_to_scrape
-    ]
+    try:
+        post_links = scraper.get_posts(thread_url, max_posts=posts_to_scrape)[
+            :posts_to_scrape
+        ]
+        random.shuffle(post_links)
 
-    for post_link in post_links:
-        if posts_scraped >= posts_to_scrape:
-            break
-        post = scraper.get_post_content(post_link)
-        data_saver.save_post_data(post)
-        posts_scraped += 1
+        for post_link in post_links:
+            if stop_flag.is_set():
+                print(f"[!] Stopping thread for {thread_url}")
+                break
+            if posts_scraped >= posts_to_scrape:
+                break
+            post = scraper.get_post_content(post_link)
+            data_saver.save_post_data(post)
+            posts_scraped += 1
+
+    except Exception as e:
+        print(f"Error scraping thread {thread_url}: {e}")
+
+
+def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
+    threads = []
+    for thread in threads_to_scrape:
+        try:
+            t = threading.Thread(
+                target=scrape_thread, args=(thread, posts_to_scrape, stop_flag)
+            )
+            t.start()
+            threads.append(t)
+        except Exception as e:
+            print(f"[!] Failed to start thread for {thread}: {e}")
+    return threads
 
 
 if __name__ == "__main__":
     threads_to_scrape = [
-        'https://www.reddit.com/r/tifu/',
-        'https://www.reddit.com/r/AmItheAsshole/',
-        'https://www.reddit.com/r/pettyrevenge/',
-        'https://www.reddit.com/r/ProRevenge/',
-        'https://www.reddit.com/r/raisedbynarcissists/',
+        "https://www.reddit.com/r/tifu/",
+        "https://www.reddit.com/r/AmItheAsshole/",
+        "https://www.reddit.com/r/pettyrevenge/",
+        "https://www.reddit.com/r/ProRevenge/",
+        "https://www.reddit.com/r/raisedbynarcissists/",
+        "https://www.reddit.com/r/confession/",
+        "https://www.reddit.com/r/offmychest/",
+        "https://www.reddit.com/r/offmychest/",
+        "https://www.reddit.com/r/MaliciousCompliance/",
+        "https://www.reddit.com/r/karen/",
+        "https://www.reddit.com/r/TalesFromRetail/",
     ]
-
-    import threading
-    for thread in threads_to_scrape:
-        try:
-            t = threading.Thread(target=scrape_thread, args=(thread, 500))
-            t.start()
-        except:
-            pass
+    scrape_all_threads(threads_to_scrape, 500)
