@@ -14,7 +14,7 @@ dependencies = [
     "requests (>=2.32.4,<3.0.0)",
     "selenium (>=4.34.2,<5.0.0)",
     "webdriver-manager (>=4.0.2,<5.0.0)",
-      "huggingface_hub",
+    "huggingface_hub",
     "loguru",
     "misaki[en]>=0.9.4",
     "numpy",
