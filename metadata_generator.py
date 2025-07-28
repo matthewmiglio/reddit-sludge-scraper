@@ -1,118 +1,144 @@
-import openai
-
-
-import json
+from transformers import pipeline
+import re
 import os
+import json
+import random
 
 
-class Creds:
-    def __init__(self):
-        self.api_json_path = "api_key.json"
+def sanitize_post_content(post_content: str) -> str:
+    try:
+        # Attempt to decode unicode escapes properly
+        decoded = post_content.encode("utf-8").decode("unicode_escape")
+    except UnicodeDecodeError:
+        decoded = post_content  # fallback if decode fails
 
-    def init_json(self):
-        content = {"open_ai_api_key": "placeholder"}
-
-        with open(self.api_json_path, "w") as f:
-            json.dump(content, f)
-
-    def load_api_key(self):
-        if not os.path.exists(self.api_json_path):
-            self.init_json()
-            print(
-                f"API key file not found at {self.api_json_path}. Please run init_json() first."
-            )
-            return False
-
-        with open(self.api_json_path, "r") as f:
-            data = json.load(f)
-            api_key = data.get("open_ai_api_key", False)
-            if not api_key or api_key == "placeholder":
-                print("API key is not set. Please update the api_key.json file.")
-                return False
-            return api_key
+    # Remove any remaining smart quotes or unprintable characters
+    decoded = re.sub(r"[^\x00-\x7F]+", "", decoded)  # strip non-ASCII
+    return decoded.strip()
 
 
+def benchmark():
+    from transformers import pipeline
+    import os, json, random
 
+    reddit_data_folder = r"reddit_data"
+    post_objects = os.listdir(reddit_data_folder)
+    post_count = 5
 
-class PostMetadataGenerator:
-    def __init__(self):
-        #store system prompt here
-        self.system_prompt = """
-    You are a YouTube Shorts metadata generator for Reddit storytime content. Your job is to take Reddit-style story text and create:
+    # --- Define models and prompts ---
+    model_list = {
+        "pegasus-xsum": "google/pegasus-xsum",
+        "bart-cnn": "facebook/bart-large-cnn",
+        "distilbart-cnn": "sshleifer/distilbart-cnn-12-6",
+        "reddit-t5-small": "AventIQ-AI/Text-summarization-on-Reddit-posts-using-t5-small",
+        "flan-t5-large": "google/flan-t5-large",
+        "falcon-rw-1b": "tiiuae/falcon-rw-1b",
+        "bge-small-en": "BAAI/bge-small-en",
+        "bart-large-xsum": "facebook/bart-large-xsum",
+        "t5-base": "t5-base",
+        "c4ai-command-r-plus": "CohereForAI/c4ai-command-r-plus",
+    }
 
-    1. A **clickbait-style YouTube Shorts TITLE** (under 70 characters)
-    2. A **fun, SEO-optimized DESCRIPTION** including hashtags like #redditstories #minecraftparkour #storytime #shorts
+    prompt_templates = {
+        # Titles
+        "title_direct": lambda text: text,
+        "title_instruction": lambda text: f"Generate a short YouTube-worthy title for the following Reddit story:\n{text}",
+        "title_summary_request": lambda text: f"Summarize this Reddit story in a catchy title for YouTube:\n{text}",
+        "title_as_editor": lambda text: f"You are a YouTube editor. Craft a compelling title for this Reddit story:\n{text}",
+        "title_clickbait": lambda text: f"Write a viral YouTube Short title based on this Reddit story. Make it emotional or surprising:\n{text}",
+        "title_just_the_twist": lambda text: f"Write a short YouTube title that highlights the twist or unexpected moment in this story:\n{text}",
+        "title_max_8_words": lambda text: f"Summarize this Reddit story into a YouTube Short title under 8 words:\n{text}",
+        # Descriptions
+        "description_instruction": lambda text: f"Write a 1-2 sentence engaging description for a YouTube Short based on this Reddit story:\n{text}",
+        "description_as_narrator": lambda text: f"You are narrating this Reddit story for a YouTube Short. Write a brief description of what the viewer will hear:\n{text}",
+        "description_with_hashtags": lambda text: f"Write a short description for a YouTube Short version of this Reddit story. Add 2-3 relevant hashtags:\n{text}",
+        "description_why_watch": lambda text: f"Describe why this Reddit story is worth watching as a YouTube Short:\n{text}",
+        "description_trailer_style": lambda text: f"Write a short, trailer-style description teasing the drama or punchline in this Reddit story:\n{text}",
+        "description_ask_question": lambda text: f"Write a YouTube Short description that ends with a question to intrigue the viewer. Base it on this Reddit story:\n{text}",
+        "description_as_uploader": lambda text: f"You just uploaded a YouTube Short based on this Reddit story. What would you write in the description field?\n{text}",
+    }
 
-    Always keep the tone engaging but safe for YouTube, with no profanity.
-    Only return the result in this format:
-    ---
-    TITLE: <catchy title here>
+    # --- Storage for all benchmark results ---
+    all_benchmark_results = []
 
-    DESCRIPTION:
-    <2-4 lines of description>
-    <Hashtags>
-    ---
-    """
-        
-        #init client with creds from file
-        creds = Creds()
-        api_key = creds.load_api_key()
-        if not api_key:
-            raise ValueError(
-                "Open AI API key is not set. Please update the api_key.json file.\nThis is necessary for youtube post metadata generation."
-            )
-        self.client = openai.OpenAI(api_key=api_key)
+    for i in range(post_count):
+        # --- Load random post ---
+        random_post = random.choice(post_objects)
+        post_path = os.path.join(reddit_data_folder, random_post)
+        with open(post_path, "r", encoding="utf-8") as f:
+            post_data = json.load(f)
 
+        post_content_raw = post_data.get("content", "")
+        post_title = post_data.get("title", "")
+        full_post = post_title + sanitize_post_content(post_content_raw)
 
-    def output_to_dict(self, output_string):
-        """
-            TITLE: My Mom's Scary Mood Swings Caught Me Off Guard at Costco!
-
-            DESCRIPTION:
-            Experience the rollercoaster of 
-        """
-        
-        try:
-            title_part, description_part = output_string.split('DESCRIPTION:')
-            title_part = title_part.replace('TITLE:', '').strip()
-            description_part = description_part.strip()
-        except:
-            return False
-
-        return {
-            "title": title_part,
-            "description": description_part
+        post_info = {
+            "index": i + 1,
+            "path": post_path,
+            "length": len(full_post),
+            "content": full_post,
+            "models": [],
         }
 
-    def generate_youtube_metadata(self, content):
-        user_prompt = f"Here is the Reddit story content:\n\n{content}"
+        for model_name, model_id in model_list.items():
+            try:
+                summarizer = pipeline("summarization", model=model_id, truncation=True)
+            except Exception as e:
+                print(f"[!] Failed to load model {model_name}: {e}")
+                continue
+            
+            model_result = {"model": model_name, "outputs": []}
 
-        response = self.client.chat.completions.create(
-            model="gpt-4",  # or "gpt-3.5-turbo"
-            messages=[
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-        )
+            for prompt_name, formatter in prompt_templates.items():
+                try:
+                    formatted_input = formatter(full_post)
+                    summary = summarizer(
+                        formatted_input,
+                        max_new_tokens=60,
+                        min_length=10,
+                        do_sample=False,
+                    )[0]["summary_text"]
 
-        output_string =  response.choices[0].message.content
-        data_dict = self.output_to_dict(output_string)
-        if data_dict is False:
-            print('[!] Fatal error: this openai output was not in the expected format!')
-            return False
-        
-        return data_dict
+                    model_result["outputs"].append(
+                        {
+                            "prompt": prompt_name,
+                            "input_excerpt": formatted_input[:80].replace("\n", " "),
+                            "output": summary.strip(),
+                        }
+                    )
+
+                except Exception as e:
+                    model_result["outputs"].append(
+                        {
+                            "prompt": prompt_name,
+                            "input_excerpt": formatter(full_post)[:80].replace(
+                                "\n", " "
+                            ),
+                            "output": f"ERROR: {str(e)}",
+                        }
+                    )
+
+            post_info["models"].append(model_result)
+
+        all_benchmark_results.append(post_info)
+
+    # --- Output phase ---
+    print(
+        "\n\n========================== BENCHMARK SUMMARY ==========================\n"
+    )
+
+    for post in all_benchmark_results:
+        print(f"\n--- Benchmark #{post['index']} ---")
+        print(f"File: {post['path']}")
+        print(f"Content Length: {post['length']} characters\n")
+
+        for model in post["models"]:
+            print(f"▶ MODEL: {model['model']}")
+            for result in model["outputs"]:
+                print(f"  [{result['prompt']}]")
+                print(f"    ↳ Input:  {result['input_excerpt']}")
+                print(f"    ↳ Output: {result['output']}\n")
 
 
-# Example usage:
 if __name__ == "__main__":
-    content = "The switch up is crazy and scary.\nI was just in Costco with my mother and she was putting on a performance; smiling, being friendly and trying to be funny but I knew she was putting on a show. My life is honestly so much easier when she is not abusive (my mood is not that low and I feel like I can finally live- I feel like I can sort of breath again).\nAs soon. As we got to the car - she changed; she was mean and talking to me like I was the problem and that I did something wrong (I felt suffocated again).\nIt's honestly mood swings and it's too much - it's like I have to walk around egg shells. I never know when she is going go from nice to abusive. It's giving me whiplash. And its no wonder why I would be so confused with my mother when I was a kid; she would be \"nice\" then turn abusive and what made it worse is that she add in love bombing and gaslighting.\nToday when we were in the store she tried to gaslight me about fucking cucumbers saying she gave them back to me when she did not. She knew she couldn't win and dropped it saying oh I don't know wear I put it."
-
-    generator = PostMetadataGenerator()
-
-    for i in range(1):
-        print('-'*50)
-        metadata_dict = generator.generate_youtube_metadata(content)
-        for k,v in metadata_dict.items():
-            print(f"{k}: {v}")
+    benchmark()
