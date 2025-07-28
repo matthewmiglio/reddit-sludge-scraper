@@ -11,7 +11,7 @@ def get_video_duration(video_path):
 
 def get_subclip(input_video_path, output_video_path, start_time, end_time):
     clip = VideoFileClip(input_video_path).subclip(start_time, end_time)
-    clip.write_videofile(output_video_path, codec="libx264")
+    clip.write_videofile(output_video_path, codec="libx264", logger=None)
     clip.close()
     return output_video_path
 
@@ -36,7 +36,7 @@ def stretch_video_dims(video_path, new_x, new_y, in_place=False):
             break
         frame = cv2.resize(frame, (new_x, new_y), interpolation=cv2.INTER_LINEAR)
         out.write(frame)
-    
+
     cap.release()
     out.release()
 
@@ -69,18 +69,12 @@ class Extractor:
         start_time = random.choice(possible_start_times)
         end_time = start_time + target_duration
 
-        print(f"Getting subclip from {start_time}s to {end_time}s of {random_video}")
         get_subclip(base_sludge_video_path, output_path, start_time, end_time)
 
-        print(f"Stretching video to {expected_dims[0]}x{expected_dims[1]}")
         stretch_video_dims(
             output_path, expected_dims[0], expected_dims[1], in_place=True
         )
 
 
 if __name__ == "__main__":
-    extractor = Extractor()
-    target_duration = 10  # seconds
-    for i in range(5):
-        output_path = rf"sludge_video_test_{i}.mp4"
-        extractor.get_random_sludge_video(target_duration, output_path, (1280, 100))
+    pass
