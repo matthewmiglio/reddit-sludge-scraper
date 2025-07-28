@@ -7,5 +7,6 @@ final_vids
 sludge_videos
 __pycache__
 temp
-api_key.json
 post_usage_history.csv
+token.json
+youtube_post_history.csv
