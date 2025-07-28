@@ -36,7 +36,7 @@ def pixel_is_white(pixel):
     return False
 
 
-def crop_whitespace_out_of_image(image_path,save=False):
+def crop_whitespace_out_of_image(image_path, save=False):
     # read image, read size
     image = cv2.imread(image_path)
     dims = image.shape
@@ -59,7 +59,6 @@ def crop_whitespace_out_of_image(image_path,save=False):
         print("[!] Warning: This image is entirely white!")
         return False
 
-
     pad = 30
 
     cropped_image = crop_image(
@@ -75,10 +74,17 @@ def resize_image_keep_aspect_ratio(image, target_width):
     target_height = int(target_width * aspect_ratio)
     resized_image = image.resize((target_width, target_height), Image.LANCZOS)
     return resized_image
-    
+
 
 def make_reddit_post_image(
-    thread, title_text, body_text, profile_img_url, subreddit_icon_url, username,expected_width,save=True,
+    thread,
+    title_text,
+    body_text,
+    profile_img_url,
+    subreddit_icon_url,
+    username,
+    expected_width,
+    save=True,
 ):
     if None in [
         thread,
@@ -180,7 +186,7 @@ def make_reddit_post_image(
     y += 8
     y = draw_wrapped_text(draw, body_text, font_body, MARGIN, y, IMG_WIDTH - 2 * MARGIN)
 
-    #resize to match expected width
+    # resize to match expected width
     img = resize_image_keep_aspect_ratio(img, expected_width)
 
     if save:
@@ -191,11 +197,8 @@ def make_reddit_post_image(
         )
         crop_whitespace_out_of_image(image_path, save=True)
         return image_path
-        
-    
+
     return img
-
-
 
 
 class ImageSaver:
@@ -220,7 +223,6 @@ class ImageSaver:
         image_path = os.path.join(self.save_path, subfolder, file_name)
 
         img.save(image_path)
-        print(f"Image saved as {image_path}")
         return image_path
 
     def get_all_images(self):
@@ -248,8 +250,7 @@ def create_all_reddit_posts():
         )
         if image is not None:
             image_path = image_saver.save_image(image, thread)
-            crop_whitespace_out_of_image(image_path,save=True)
-
+            crop_whitespace_out_of_image(image_path, save=True)
 
 
 if __name__ == "__main__":
