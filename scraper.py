@@ -10,6 +10,10 @@ import os
 import random
 
 
+def decode_surrogates(s):
+    return s.encode("utf-16", "surrogatepass").decode("utf-16")
+
+
 class Post:
     def __init__(self, username, profile_img, content, thread_name, title, url):
         self.username = username
@@ -173,6 +177,10 @@ class DataSaver:
         return False
 
     def save_post_data(self, post: Post):
+        # clean the post content before it gets written
+        post.content = decode_surrogates(post.content)
+        post.title = decode_surrogates(post.title)
+
         # check if already exists
         url = post.url
         if self.data_exists(url):
@@ -192,7 +200,8 @@ class DataSaver:
 
     def get_all_posts(self):
         posts = []
-        for file_name in os.listdir(self.data_folder_path):
+        file_names = os.listdir(self.data_folder_path)
+        for file_name in file_names:
             if file_name.endswith(".json"):
                 file_path = os.path.join(self.data_folder_path, file_name)
                 with open(file_path, "r") as f:
@@ -206,6 +215,7 @@ class DataSaver:
                         data["url"],
                     )
                     posts.append(post)
+                    print(f"Loaded post {len(posts)} / {len(file_names)}", end="\r")
         return posts
 
 
