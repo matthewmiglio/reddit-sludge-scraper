@@ -5,7 +5,7 @@ import random
 import os
 
 from scraper import scrape_all_threads
-from video_maker import create_all_sludge_videos
+from video_maker import create_all_stacked_reddit_scroll_videos
 
 
 class App(tk.Tk):
@@ -167,7 +167,6 @@ class ScraperPage(tk.Frame):
         self.scrape_thread.start()
 
     def stop_scraper(self):
-        print("Stop scrape thread")
         self.stop_flag.set()
         self.status_label.config(text="Stopping scrape threads...")
 
@@ -206,7 +205,7 @@ class SlopGenPage(tk.Frame):
         def run():
             self.status_label.config(text="Video generation started...")
             try:
-                create_all_sludge_videos(output_dir=r"final_vids")
+                create_all_stacked_reddit_scroll_videos(output_dir=r"final_vids")
                 self.status_label.config(text="All videos created!")
             except Exception as e:
                 self.status_label.config(text=f"Error: {e}")
