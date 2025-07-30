@@ -2,6 +2,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import os
+import json
+import random
 
 
 class YoutubeUploader:
@@ -70,10 +72,6 @@ class YoutubePostHistoryManager:
             return video_folder_name in content.split(",")
 
 
-import json
-import random
-
-
 def extract_metadata_from_folder(video_subfolder_path):
     metadata_json_path = os.path.join(video_subfolder_path, "metadata.json")
     with open(metadata_json_path, "r") as f:
@@ -95,50 +93,39 @@ def sanitize_metadata(metadata):
         return string.strip()
 
     blacklist_chars = [
-        '"',
-        "'",
-        "(",
-        ")",
-        "[",
-        "]",
+        "---",  # em dash sequence (YouTube titles usually use single dash)
         "{",
-        "}",
+        "}",  # rarely seen in titles
         "<",
-        ">",
-        "/",
-        "\\",
-        "|",
-        ":",
-        ";",
-        ",",
-        ".",
-        "?",
-        "!",
-        "@",
-        "#",
-        "$",
+        ">",  # HTML-like symbols, never in titles
+        "\\",  # backslash
+        "|",  # pipe
+        "@",  # used for mentions, but not title-safe
         "%",
         "^",
-        "&",
         "*",
         "+",
         "=",
         "`",
-        "~",
+        "~",  # code/math/technical chars
         "—",
-        "–",
+        "–",  # fancy em/en dashes
         "‘",
         "’",
         "“",
-        "”",
+        "”",  # smart quotes
         "…",
         "«",
+        '"',
         "»",
         "‹",
-        "›",
+        "›",  # ellipsis, chevrons
         "•",
         "·",
-        "°",
+        "°",  # bullets, degrees
+        "  ",  # double space
+        "\t",
+        "\n",  # tabs and newlines
     ]
 
     new_data = {}
